@@ -163,10 +163,20 @@ def label_for(keycode) -> str:
     return keycode
 
 
-def parse_vial_layout(vial_json: dict) -> dict[tuple[int, int], tuple[float, float, float, float]]:
-    """Return {(row, col): (x, y, w, h)} from vial.json layouts.keymap."""
+def parse_vial_layout(
+    vial_json: dict,
+) -> tuple[
+    dict[tuple[int, int], tuple[float, float, float, float]],
+    list[tuple[int, int, float, float, float, float]],
+]:
+    """Return (matrix_positions, encoder_positions) from vial.json layouts.keymap.
+
+    Encoder positions use Vial's special label format
+    ``"<idx>,<direction>\\n\\n\\n\\n\\n\\n\\n\\n\\ne"`` where direction is 0=CCW, 1=CW.
+    """
     keymap_layout = vial_json["layouts"]["keymap"]
     positions: dict[tuple[int, int], tuple[float, float, float, float]] = {}
+    encoder_positions: list[tuple[int, int, float, float, float, float]] = []
 
     y = 0.0
     for row_def in keymap_layout:
@@ -184,13 +194,24 @@ def parse_vial_layout(vial_json: dict) -> dict[tuple[int, int], tuple[float, flo
                 if "w" in item:
                     w = item["w"]
             elif isinstance(item, str):
-                row_idx, col_idx = (int(p) for p in item.split(","))
-                positions[(row_idx, col_idx)] = (x, y, w, h)
+                if "\n" in item:
+                    head = item.split("\n", 1)[0]
+                    try:
+                        enc_idx, direction = (int(p) for p in head.split(","))
+                        encoder_positions.append((enc_idx, direction, x, y, w, h))
+                    except ValueError:
+                        pass
+                else:
+                    try:
+                        row_idx, col_idx = (int(p) for p in item.split(","))
+                        positions[(row_idx, col_idx)] = (x, y, w, h)
+                    except ValueError:
+                        pass
                 x += w
                 w = 1.0
                 h = 1.0
         y += 1.0
-    return positions
+    return positions, encoder_positions
 
 
 def render_key(x_units: float, y_units: float, w: float, h: float,
@@ -232,7 +253,28 @@ def render_key(x_units: float, y_units: float, w: float, h: float,
     return "".join(out)
 
 
+def render_encoder_key(x_units: float, y_units: float, w: float, h: float,
+                       label: str, direction: int, ox: float, oy: float) -> str:
+    x = ox + x_units * (KEY_SIZE + KEY_GAP)
+    y = oy + y_units * (KEY_SIZE + KEY_GAP)
+    cx = x + (w * KEY_SIZE + (w - 1) * KEY_GAP) / 2
+    cy = y + (h * KEY_SIZE + (h - 1) * KEY_GAP) / 2
+    r = KEY_SIZE / 2 - 2
+    arrow = "↺" if direction == 0 else "↻"
+    return (
+        f'<circle cx="{cx:.1f}" cy="{cy:.1f}" r="{r:.1f}" '
+        f'fill="#eef5ff" stroke="#4a78c0" stroke-width="1.2"/>'
+        f'<text x="{cx:.1f}" y="{cy - 6:.1f}" font-size="14" '
+        f'font-family="ui-sans-serif, system-ui, sans-serif" '
+        f'fill="#4a78c0" text-anchor="middle">{arrow}</text>'
+        f'<text x="{cx:.1f}" y="{cy + 12:.1f}" font-size="10" '
+        f'font-family="ui-sans-serif, system-ui, sans-serif" '
+        f'fill="#222" text-anchor="middle">{escape(label)}</text>'
+    )
+
+
 def render_layer(positions: dict[tuple[int, int], tuple[float, float, float, float]],
+                 encoder_positions: list[tuple[int, int, float, float, float, float]],
                  layer: list[list], encoder_pairs: list[list[str]] | None,
                  layer_num: int, ox: float, oy: float) -> tuple[str, float, float]:
     """Render one layer block. Returns (svg, width, height) in pixels."""
@@ -258,22 +300,19 @@ def render_layer(positions: dict[tuple[int, int], tuple[float, float, float, flo
         max_x_units = max(max_x_units, xu + w)
         max_y_units = max(max_y_units, yu + h)
 
+    for (enc_idx, direction, xu, yu, w, h) in encoder_positions:
+        kc = None
+        if encoder_pairs and enc_idx < len(encoder_pairs):
+            pair = encoder_pairs[enc_idx]
+            if pair and direction < len(pair):
+                kc = pair[direction]
+        label = label_for(kc) if kc is not None else ""
+        parts.append(render_encoder_key(xu, yu, w, h, label, direction, inner_ox, inner_oy))
+        max_x_units = max(max_x_units, xu + w)
+        max_y_units = max(max_y_units, yu + h)
+
     width = max_x_units * (KEY_SIZE + KEY_GAP)
     height = max_y_units * (KEY_SIZE + KEY_GAP) + TITLE_HEIGHT
-
-    if encoder_pairs:
-        enc_y = inner_oy + max_y_units * (KEY_SIZE + KEY_GAP) + 8
-        enc_label = "Encoder: " + ", ".join(
-            f"#{i} ↺{label_for(pair[0])} / ↻{label_for(pair[1])}"
-            for i, pair in enumerate(encoder_pairs)
-            if pair and (label_for(pair[0]) or label_for(pair[1])) and label_for(pair[0]) != "▽"
-        )
-        if enc_label != "Encoder: ":
-            parts.append(
-                f'<text x="{inner_ox:.1f}" y="{enc_y:.1f}" font-size="11" '
-                f'font-family="ui-sans-serif, system-ui, sans-serif" fill="#555">{escape(enc_label)}</text>'
-            )
-            height += 20
 
     return "".join(parts), width, height
 
@@ -281,7 +320,7 @@ def render_layer(positions: dict[tuple[int, int], tuple[float, float, float, flo
 def build_svg(vial_path: Path, vial_json_path: Path) -> str:
     vil = json.loads(vial_path.read_text(encoding="utf-8"))
     vial_json = json.loads(vial_json_path.read_text(encoding="utf-8"))
-    positions = parse_vial_layout(vial_json)
+    positions, encoder_positions = parse_vial_layout(vial_json)
 
     layers = vil["layout"]
     encoder_layout = vil.get("encoder_layout", [])
@@ -294,7 +333,7 @@ def build_svg(vial_path: Path, vial_json_path: Path) -> str:
 
     for i, layer in enumerate(layers):
         enc = encoder_layout[i] if i < len(encoder_layout) else None
-        svg, w, h = render_layer(positions, layer, enc, i, PAD, current_y)
+        svg, w, h = render_layer(positions, encoder_positions, layer, enc, i, PAD, current_y)
         body_parts.append(svg)
         layer_widths.append(w)
         current_y += h + LAYER_GAP
