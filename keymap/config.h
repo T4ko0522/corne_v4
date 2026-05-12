@@ -9,10 +9,9 @@
 #define VIAL_UNLOCK_COMBO_COLS {0, 1}
 
 #undef DYNAMIC_KEYMAP_LAYER_COUNT
-#define DYNAMIC_KEYMAP_LAYER_COUNT 6
+#define DYNAMIC_KEYMAP_LAYER_COUNT 3
 
 #define TAPPING_TERM 180
 
-// RP2040 split: wait for USB enumeration to decide master/slave role.
-#define SPLIT_USB_DETECT
-#define SPLIT_USB_TIMEOUT 2000
+// Split master/slave detection is handled by the keyboard's info.json
+// (handedness pin GP21). Do not redefine SPLIT_USB_DETECT here.
