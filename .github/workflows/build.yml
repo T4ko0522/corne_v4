@@ -1,0 +1,78 @@
+name: Build firmware
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "keymap/**"
+      - "build.sh"
+      - ".github/workflows/build.yml"
+  pull_request:
+    paths:
+      - "keymap/**"
+      - "build.sh"
+      - ".github/workflows/build.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/qmk/qmk_cli
+    steps:
+      - name: Checkout this repo
+        uses: actions/checkout@v4
+        with:
+          path: corne_v4
+
+      - name: Checkout vial-qmk
+        uses: actions/checkout@v4
+        with:
+          repository: vial-kb/vial-qmk
+          path: vial-qmk
+          submodules: recursive
+
+      - name: Install custom keymap into vial-qmk
+        run: |
+          mkdir -p vial-qmk/keyboards/crkbd/keymaps/takow
+          cp -r corne_v4/keymap/* vial-qmk/keyboards/crkbd/keymaps/takow/
+
+      - name: Build crkbd/rev4_1/standard:takow
+        working-directory: vial-qmk
+        run: |
+          qmk setup -y || true
+          make crkbd/rev4_1/standard:takow
+
+      - name: Collect UF2
+        run: |
+          mkdir -p out
+          cp vial-qmk/crkbd_rev4_1_standard_takow.uf2 out/
+
+      - name: Upload UF2 artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: crkbd_rev4_1_standard_takow
+          path: out/*.uf2
+          retention-days: 90
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: crkbd_rev4_1_standard_takow
+          path: out
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: out/*.uf2
+          generate_release_notes: true
