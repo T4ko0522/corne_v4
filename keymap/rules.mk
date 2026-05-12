@@ -7,6 +7,7 @@ LTO_ENABLE   = yes
 # supported by rev4_1's hardware).
 RGBLIGHT_ENABLE   = no
 RGB_MATRIX_ENABLE = yes
+VIALRGB_ENABLE    = yes
 OLED_ENABLE       = no
 MOUSEKEY_ENABLE   = yes
 EXTRAKEY_ENABLE   = yes
