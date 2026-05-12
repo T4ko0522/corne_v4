@@ -1,6 +1,7 @@
 # Corne v4.1 (takow keymap)
 
 Personal Vial firmware & keymap for Corne v4.1 (RP2040, JIS).
+Version 1.00
 
 | 写真 | |
 |---|---|
