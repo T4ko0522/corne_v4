@@ -1,1 +1,9 @@
 build/
+*.uf2
+*.bin
+*.hex
+.build/
+__pycache__/
+*.pyc
+.vscode/
+.idea/
